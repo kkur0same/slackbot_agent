@@ -17,20 +17,9 @@ embeddings:
     type: "HuggingFaceEmbeddings"
     vb_name: "hf-faiss"
     model_name: "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
-  - name: "dragon"
-    type: "DragonPlusEmbeddings"
-    vb_name: "dragon-faiss"
-  - name: "dpr"
-    type: "DPREmbeddings"
-    vb_name: "dpr-faiss"
 
 
 vectordb:
-  - vb_name: "hf-faiss"
-    path: /mnt/c/Users/kur0/webscrap/autoscrapergpt/qa_bot_test/hf_all.faiss
   - vb_name: "openai-faiss"
     path: /mnt/c/Users/kur0/webscrap/autoscrapergpt/qa_bot_test/openai_all.faiss
-  - vb_name: "dragon-faiss"
-    path: /mnt/c/Users/kur0/webscrap/autoscrapergpt/qa_bot_test/dragon_524.faiss
-  - vb_name: "dpr-faiss"
-    path: /mnt/c/Users/kur0/webscrap/autoscrapergpt/qa_bot_test/dpr_524.faiss
+

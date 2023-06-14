@@ -40,11 +40,9 @@ class ChatState:
         self.last_active = time.time()
 
 
-@app.event("message")
 def handle_message_events(body, logger):
     logger.info(body)
 
-@app.event("app_mention")
 def handle_mentions(body, say, logger, config):
     user_message = body["event"]["text"]
     bot_user_id = bot_id
@@ -113,7 +111,6 @@ def handle_mentions(body, say, logger, config):
                                    formatted_sources=formatted_sources,
                                    history=history_string)
 
-@app.event('reaction_added')
 def handle_reaction(body, logger):
     logger.info(f"Reaction added event triggered.")
     event = body['event']
@@ -133,7 +130,6 @@ def handle_reaction(body, logger):
                                        user_reaction_ts=user_reaction_ts)
     logger.info(f"Recorded reaction: {reaction} from user: {user_id} on message: {item['ts']}")
 
-@app.command("/safety_mode")
 def activate_safety_mode(ack, command):
     user_id = command["user_id"]
     # Get the chat state for the user
