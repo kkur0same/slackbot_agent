@@ -6,6 +6,7 @@ from chatbot import initialize_chatbot
 from slack_db import record_interaction_in_database
 import time
 from threading import Timer
+from multiprocessing import Manager, Process
 
 
 user_chat_states_lock = Lock()
@@ -15,8 +16,10 @@ class ChatState:
     def __init__(self):
         self.safety_mode = False
         self.thread_histories = {}
+        self.in_sequence = 0
+        self.out_sequence = 0
+        self.is_processing = False
         self.last_active = time.time()
-        self.chatbot_instance = None 
 
     def set_safety_mode(self, mode):
         self.safety_mode = mode
@@ -29,12 +32,6 @@ class ChatState:
     
     def set_thread_history(self, thread_id, history):
         self.thread_histories[thread_id] = history
-
-    def set_chatbot_instance(self, chatbot):
-        self.chatbot_instance = chatbot
- 
-    def get_chatbot_instance(self):
-        return self.chatbot_instance
     
     def update_last_active(self):
         self.last_active = time.time()
@@ -43,7 +40,31 @@ class ChatState:
 def handle_message_events(body, logger):
     logger.info(body)
 
+def generate_response(in_out_dict):
+    safety_mode = in_out_dict["safety_mode"]
+    user_message = in_out_dict["user_message"]
+    say = in_out_dict["say"]
+    ts = in_out_dict["ts"]
+    history = in_out_dict["history"]
+    config = in_out_dict["config"]
+
+    model_name, embedding_name = get_model_and_embedding(safety_mode, user_message, say, ts)
+    lazy_model, lazy_embedding = get_lazy_model_and_embedding(model_name, embedding_name)
+    qa = initialize_chatbot(lazy_model, lazy_embedding, config)
+    user_message = clean_user_message(user_message)
+    response, answer, history = get_response_and_history(qa, user_message, history)
+    formatted_response, formatted_sources = format_response(response, answer)
+
+    in_out_dict["model_name"] = model_name
+    in_out_dict["embedding_name"] = embedding_name
+    in_out_dict["answer"] = answer
+    in_out_dict["history"] = history
+    in_out_dict["formatted_response"] = formatted_response
+    in_out_dict["formatted_sources"] = formatted_sources
+
+
 def handle_mentions(body, say, logger, config):
+    session_type = 'mention'
     user_message = body["event"]["text"]
     bot_user_id = bot_id
     channel_id = body["event"]["channel"]
@@ -52,30 +73,49 @@ def handle_mentions(body, say, logger, config):
     user_id = body["event"]["user"]
     ts = body["event"]["ts"]
     thread_ts = body["event"]["thread_ts"] if "thread_ts" in body["event"] else ts
-    is_new_conversation = (ts == thread_ts)
 
-    with user_chat_states_lock:
-        if user_id not in user_chat_states:
-            user_chat_states[user_id] = ChatState()      
+    user_chat_states_lock.acquire()
+    if user_id not in user_chat_states:
+        user_chat_states[user_id] = ChatState()
+        user_chat_states_lock.release()
+    else:
+        user_chat_states[user_id].in_sequence += 1
+        if user_chat_states[user_id].is_processing:
+            local_sequence = user_chat_states[user_id].in_sequence
+            while user_chat_states[user_id].is_processing and \
+                    local_sequence == user_chat_states[user_id].out_sequence:
+                user_chat_states_lock.release()
+                time.sleep(1)
+                user_chat_states_lock.acquire()
+            user_chat_states_lock.release()
 
     chat_state = user_chat_states[user_id]
     chat_state.update_last_active()
+    chat_state.is_processing = True
     safety_mode = chat_state.get_safety_mode()
     history = chat_state.get_thread_history(thread_ts)
-    session_type = 'mention'
 
-    if is_new_conversation or chat_state.get_chatbot_instance() is None:
-        model_name, embedding_name = get_model_and_embedding(safety_mode, user_message, say, ts)
-        lazy_model, lazy_embedding = get_lazy_model_and_embedding(model_name, embedding_name)
-        qa = initialize_chatbot(lazy_model, lazy_embedding, config)
-        chat_state.set_chatbot_instance(qa)
-    else:
-        qa = chat_state.get_chatbot_instance()
+    in_out_dict = Manager().dict()
+    in_out_dict["safety_mode"] = safety_mode
+    in_out_dict["user_message"] = user_message
+    in_out_dict["say"] = say
+    in_out_dict["ts"] = ts
+    in_out_dict["history"] = history
+    in_out_dict["config"] = config
+    generate_response_p = Process(target=generate_response, args=(in_out_dict))
+    generate_response_p.start()
+    generate_response_p.join()
 
-    user_message = clean_user_message(user_message)
-    response, answer, history = get_response_and_history(qa, user_message, history)
+    model_name = in_out_dict["model_name"]
+    embedding_name = in_out_dict["embedding_name"]
+    answer = in_out_dict["answer"]
+    history = in_out_dict["history"]
+    formatted_response = in_out_dict["formatted_response"]
+    formatted_sources = in_out_dict["formatted_sources"]
+
     chat_state.set_thread_history(thread_ts, history)
-    formatted_response, formatted_sources = format_response(response, answer)
+    chat_state.is_processing = False
+    chat_state.out_sequence += 1
 
     if safety_mode:
         print(safety_mode)
