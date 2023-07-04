@@ -102,7 +102,7 @@ def handle_mentions(body, say, logger, config):
     in_out_dict["ts"] = ts
     in_out_dict["history"] = history
     in_out_dict["config"] = config
-    generate_response_p = Process(target=generate_response, args=(in_out_dict))
+    generate_response_p = Process(target=generate_response, args=(in_out_dict,))
     generate_response_p.start()
     generate_response_p.join()
 
