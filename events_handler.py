@@ -82,8 +82,8 @@ def handle_mentions(body, say, logger, config):
         user_chat_states[user_id].in_sequence += 1
         if user_chat_states[user_id].is_processing:
             local_sequence = user_chat_states[user_id].in_sequence
-            while user_chat_states[user_id].is_processing and \
-                    local_sequence == user_chat_states[user_id].out_sequence:
+            while user_chat_states[user_id].is_processing or \
+                    local_sequence != user_chat_states[user_id].out_sequence:
                 user_chat_states_lock.release()
                 time.sleep(1)
                 user_chat_states_lock.acquire()
